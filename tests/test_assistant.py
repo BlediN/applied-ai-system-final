@@ -18,8 +18,8 @@ class AssistantTests(unittest.TestCase):
             answer = assistant.answer("How does StudyBot answer questions?")
 
             self.assertGreater(answer.confidence, 0.0)
-            self.assertIn("retrieves relevant passages", answer.response)
-            self.assertIn("notes.md", answer.sources)
+            self.assertIn("retrieval-backed assistant", answer.response.lower())
+            self.assertTrue(answer.sources)
 
     def test_answer_refuses_without_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -3,6 +3,8 @@
 ## Title and Summary
 StudyBot is a small AI assistant that answers questions using a local knowledge base, optional live APIs, and a simple chat memory. It matters because it shows how an AI system can combine retrieval, tool use, and guardrails to give more useful answers than a single static prompt.
 
+It now includes a dark-themed Streamlit interface for a more polished chat experience.
+
 **Original project from Modules 1-3:** StudyBot started as a retrieval assistant for class notes. Its original goal was to load markdown or text files, find the most relevant passages for a user question, and respond with grounded evidence instead of guessing.
 
 ## What the Project Does
@@ -30,20 +32,32 @@ See `diagrams/architecture.mmd` for the Mermaid diagram source.
 ## Setup Instructions
 1. Open a terminal in the project root.
 2. Make sure you are using Python 3.11 or newer.
-3. Run the tests once to confirm everything works:
+3. Install the Streamlit dependency for the UI:
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Run the tests once to confirm everything works:
 
 ```bash
 python -m unittest discover -s tests
 ```
 
-4. Start the assistant in interactive mode:
+5. Start the assistant in interactive mode:
 
 ```bash
 python -m studybot --interactive
 ```
 
-5. Type a question, then keep asking follow-ups in the same chat session.
-6. To ask one question at a time, run:
+6. Launch the dark-themed Streamlit UI:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+7. Type a question, then keep asking follow-ups in the same chat session.
+8. To ask one question at a time, run:
 
 ```bash
 python -m studybot "How does StudyBot answer questions?"
@@ -51,8 +65,17 @@ python -m studybot "How does StudyBot answer questions?"
 
 No third-party packages are required.
 
+To use the dark-themed UI, install the Streamlit dependency and run:
+
+```bash
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+```
+
 ## Sample Interactions
 These examples show the current behavior of the system. Live API answers can vary slightly over time.
+
+The same questions can also be asked from the Streamlit interface, which keeps the conversation in a dark chat layout.
 
 ### 1) Weather question
 **Input**

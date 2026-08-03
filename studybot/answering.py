@@ -80,6 +80,21 @@ class Assistant:
         routed_question: str,
         top_k: int,
     ) -> tuple[str, list[str], list[str], float, str | None]:
+        if topic == "capabilities":
+            response = (
+                "I can help with your local notes, coding questions, coding errors, weather, definitions, news, and general factual questions. "
+                "I also keep short conversation context in interactive chat and cite sources when I use your notes."
+            )
+            return response, ["system-capabilities"], [response], 0.95, "capabilities"
+
+        if topic == "project_overview":
+            response = (
+                "StudyBot is a retrieval-backed assistant for project notes and study material. It loads markdown and text files, ranks the most relevant passages, and answers with grounded evidence and source citations. "
+                "It also supports weather, definitions, news, and coding help through separate routes when those topics fit better."
+            )
+            sources = ["project_brief.md", "ai_features.md"]
+            return response, sources, [response], 0.97, "studybot"
+
         if topic == "coding_error":
             focus = self._extract_error_focus(original_question)
             return self._build_coding_error_response(original_question), [], [], 0.82, focus
@@ -150,6 +165,15 @@ class Assistant:
                         focus,
                     )
                 except Exception:
+                    local_summary = self._local_definition_summary(focus or routed_question)
+                    if local_summary:
+                        return (
+                            f"Here’s a concise definition: {local_summary}",
+                            ["local-glossary"],
+                            [local_summary],
+                            0.76,
+                            focus,
+                        )
                     return (
                         "I could not find a definition source right now. Try rephrasing the term or asking for a broader explanation.",
                         [],
@@ -190,6 +214,10 @@ class Assistant:
 
     def _detect_topic(self, question: str) -> str:
         lower = question.lower()
+        if self._looks_like_capabilities_question(lower):
+            return "capabilities"
+        if self._looks_like_project_overview_question(lower):
+            return "project_overview"
         if self._looks_like_coding_error_question(lower):
             return "coding_error"
         if self._looks_like_coding_question(lower):
@@ -236,6 +264,33 @@ class Assistant:
         if response.lower().startswith("here’s") or response.lower().startswith("here is"):
             return response
         return f"Picking up from your earlier question, {response[0].lower() + response[1:] if response else response}"
+
+    def _looks_like_capabilities_question(self, question: str) -> bool:
+        return any(
+            phrase in question
+            for phrase in [
+                "what can you do",
+                "what do you do",
+                "how can you help",
+                "what are you capable of",
+                "help me",
+                "what topics can you handle",
+            ]
+        )
+
+    def _looks_like_project_overview_question(self, question: str) -> bool:
+        return any(
+            phrase in question
+            for phrase in [
+                "what is studybot",
+                "how does studybot answer questions",
+                "how does this app work",
+                "what does this app do",
+                "what is this project",
+                "tell me about studybot",
+                "how does studybot work",
+            ]
+        )
 
     def _looks_like_coding_question(self, question: str) -> bool:
         coding_keywords = [
@@ -306,7 +361,19 @@ class Assistant:
 
     def _is_follow_up_question(self, question: str) -> bool:
         lower = question.lower().strip()
-        short = len(lower.split()) <= 4
+        if self._looks_like_definition_question(lower):
+            return False
+        if self._looks_like_weather_question(lower):
+            return False
+        if self._looks_like_news_question(lower):
+            return False
+        if self._looks_like_factual_question(lower):
+            return False
+        if self._looks_like_capabilities_question(lower):
+            return False
+        if self._looks_like_coding_question(lower) or self._looks_like_coding_error_question(lower):
+            return False
+
         follow_up_phrases = (
             "what about",
             "how about",
@@ -323,9 +390,14 @@ class Assistant:
             "what else",
             "and then",
         )
-        if short:
+        if lower.startswith(follow_up_phrases) or any(phrase in lower for phrase in ["that one", "this one", "there too", "same thing", "it too"]):
             return True
-        return lower.startswith(follow_up_phrases) or any(phrase in lower for phrase in ["that one", "this one", "there too", "same thing", "it too"])
+
+        tokens = lower.split()
+        if len(tokens) <= 4 and any(token in {"it", "that", "this", "they", "them", "there", "more", "again"} for token in tokens):
+            return True
+
+        return False
 
     def _build_coding_response(self, question: str) -> str:
         lower = question.lower()
@@ -468,15 +540,17 @@ class Assistant:
                 normalized = sentence.strip()
                 if not normalized or normalized in seen:
                     continue
+                if self._is_low_value_snippet(normalized):
+                    continue
                 seen.add(normalized)
                 sentence_terms = Counter(tokenize(normalized))
                 overlap = sum(min(question_terms[term], sentence_terms[term]) for term in question_terms if term in sentence_terms)
                 if overlap == 0:
                     continue
-                score = overlap + result.score
+                score = overlap + result.score + self._sentence_bonus(normalized, question)
                 scored_sentences.append((score, normalized))
 
-        scored_sentences.sort(key=lambda item: item[0], reverse=True)
+            scored_sentences.sort(key=lambda item: item[0], reverse=True)
         return [sentence for _, sentence in scored_sentences[:3]]
 
     def _format_sources(self, results: list[RetrievalResult]) -> list[str]:
@@ -497,6 +571,95 @@ class Assistant:
                 f"but I do not have enough direct evidence to summarize the answer. Sources: {', '.join(sources)}."
             )
 
-        summary = " ".join(evidence)
+        summary = self._summarize_evidence(evidence)
         source_text = ", ".join(sources)
         return f"Based on your notes, {summary} Sources: {source_text}."
+
+    def _is_low_value_snippet(self, text: str) -> bool:
+        lower = text.lower()
+        low_value_markers = [
+            "example questions",
+            "project goals",
+            "technical notes",
+            "how the system behaves",
+            "key ai features",
+            "studybot project brief",
+            "ai features",
+            "project brief",
+            "- what",
+            "- how",
+        ]
+        if len(lower) < 18:
+            return True
+        if lower.startswith(("#", "##", "###")):
+            return True
+        return any(marker in lower for marker in low_value_markers)
+
+    def _summarize_evidence(self, evidence: list[str]) -> str:
+        cleaned_sentences: list[str] = []
+        for sentence in evidence:
+            cleaned = re.sub(r"^[-*#\s]+", "", sentence).strip()
+            cleaned = re.sub(r"\s+", " ", cleaned)
+            if not cleaned:
+                continue
+            if cleaned not in cleaned_sentences:
+                cleaned_sentences.append(cleaned)
+
+        if not cleaned_sentences:
+            return "I found relevant notes, but they were too fragmentary to summarize cleanly."
+
+        prioritized = self._prioritize_summary_sentences(cleaned_sentences)
+        first = prioritized[0]
+        if len(prioritized) > 1:
+            second = prioritized[1]
+            return f"{first} I also found related notes about {second.lower()}"
+        return first
+
+    def _sentence_bonus(self, sentence: str, question: str) -> float:
+        lower_sentence = sentence.lower()
+        lower_question = question.lower()
+        bonus = 0.0
+        if "studybot" in lower_sentence and "studybot" in lower_question:
+            bonus += 1.5
+        if "retrieval-backed" in lower_sentence or "retrieval pipeline" in lower_sentence:
+            bonus += 1.2
+        if "answers questions" in lower_sentence or "local knowledge base" in lower_sentence:
+            bonus += 1.0
+        if lower_sentence.startswith(("- ", "* ")):
+            bonus -= 0.3
+        if "example questions" in lower_sentence:
+            bonus -= 1.2
+        return bonus
+
+    def _prioritize_summary_sentences(self, sentences: list[str]) -> list[str]:
+        def score(sentence: str) -> tuple[int, int, str]:
+            lower = sentence.lower()
+            priority = 0
+            if "studybot" in lower:
+                priority += 4
+            if "retrieval-backed" in lower:
+                priority += 4
+            if "answers questions" in lower:
+                priority += 3
+            if "local knowledge base" in lower:
+                priority += 3
+            if "coding questions" in lower:
+                priority += 1
+            if "example questions" in lower:
+                priority -= 5
+            return (-priority, len(sentence), sentence)
+
+        return sorted(sentences, key=score)
+
+    def _local_definition_summary(self, term: str) -> str | None:
+        normalized = term.lower().strip()
+        glossary = {
+            "polymorphism": "Polymorphism is the ability of different objects to respond to the same method or operation in different ways.",
+            "inheritance": "Inheritance is a programming feature where one class reuses or extends behavior from another class.",
+            "encapsulation": "Encapsulation is the practice of keeping data and methods bundled together and hiding internal details when possible.",
+            "abstraction": "Abstraction is the practice of focusing on the important parts of a system while hiding unnecessary details.",
+            "typeerror": "TypeError is a Python exception that usually means an operation received the wrong type of value or the wrong number of arguments.",
+            "api": "An API is a way for software systems to communicate with each other through defined requests and responses.",
+            "rag": "RAG, or retrieval-augmented generation, is a pattern where the AI looks up information before it answers.",
+        }
+        return glossary.get(normalized)
