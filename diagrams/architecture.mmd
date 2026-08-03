@@ -1,0 +1,13 @@
+flowchart LR
+    U[Human user] --> C[CLI entry point\npython -m studybot]
+    C --> L[Logging + guardrails]
+    C --> K[Knowledge loader\nassets/knowledge/*.md|*.txt]
+    K --> R[Retriever\nTF-IDF style ranking]
+    R --> A[Answer composer\nselects grounded evidence]
+    A --> O[Response with sources\nor safe fallback]
+    O --> U
+
+    T[Tests / human review] --> K
+    T --> R
+    T --> A
+    T --> O
